@@ -4,7 +4,7 @@ def open_file(file_name: str) -> list[str]:
     lines: list[str] = []
     with open(file_name, 'r') as file:
         for line in file:
-            lines.append(line.rstrip())
+            lines.append(line.rstrip('\n'))
 
     return lines
 
