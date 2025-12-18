@@ -1,7 +1,6 @@
 import sys
 import dataclasses
 from enum import Enum
-from collections import defaultdict
 
 class PointValue(str, Enum):
     NOTHING = "."
