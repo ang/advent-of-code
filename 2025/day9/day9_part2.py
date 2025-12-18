@@ -1,24 +1,14 @@
-# Right now I iterate through all the points
-# If I find a matching perimeter, I can skip through some points
-
 import sys
 import dataclasses
-from enum import Enum
-import functools
-
-class PointValue(str, Enum):
-    NOTHING = "."
-    RED_TILE = "#"
-    RECTANGLE = "O"
 
 @dataclasses.dataclass(frozen=True)
 class Point:
     x: int
     y: int
-    value: PointValue = PointValue.NOTHING
 
 @dataclasses.dataclass(frozen=True)
 class Perimeter:
+    # tile1 is always more "left" and more "up" than tile1
     tile1: Point
     tile2: Point
 
@@ -27,8 +17,6 @@ class RectangleArea:
     tile1: Point
     tile2: Point
     area: int
-
-Grid = dict[int, dict[int, PointValue]]
 
 def open_file(file_name: str) -> list[str]:
     lines: list[str] = []
@@ -45,11 +33,11 @@ def parse(lines: list[str]) -> list[Point]:
         x_str, y_str = line.split(',')
         x = int(x_str)
         y = int(y_str)
-        red_tiles.append(Point(x, y, PointValue.RED_TILE))
+        red_tiles.append(Point(x, y))
 
     return red_tiles
 
-def day(file_name, is_print_grid=False):
+def day(file_name):
     lines = open_file(file_name)
     red_tiles = parse(lines)
     perimeters = build_perimeter(red_tiles)
@@ -71,12 +59,13 @@ def build_perimeter(red_tiles: list[Point]) -> list[Perimeter]:
         if index == len(red_tiles) - 1:
             next_tile_index = 0
 
-        perimeters.append(
-            Perimeter(
-                red_tile,
-                red_tiles[next_tile_index]
-            )
-        )
+        tile1 = red_tile
+        tile2 = red_tiles[next_tile_index]
+
+        if not (tile1.x <= tile2.x and tile1.y <= tile2.y):
+            tile1, tile2 = tile2, tile1
+
+        perimeters.append(Perimeter(tile1, tile2))
 
     return perimeters
 
@@ -92,102 +81,92 @@ def calculate_areas(red_tiles: list[Point]) -> list[RectangleArea]:
     return areas
 
 def get_largest_area(sorted_areas: list[RectangleArea], perimeters: list[Perimeter]) -> RectangleArea | None:
-    perimeters_tuple = tuple(perimeters)
     for area in sorted_areas:
-        if can_create_rectangle(area.tile1, area.tile2, perimeters_tuple):
+        smallest_x = area.tile1.x
+        largest_x = area.tile2.x
+        smallest_y = area.tile1.y
+        largest_y = area.tile2.y
+
+        if smallest_x > largest_x:
+            smallest_x, largest_x = largest_x, smallest_x
+        if smallest_y > largest_y:
+            smallest_y, largest_y = largest_y, smallest_y
+
+        if can_create_rectangle(smallest_x, largest_x, smallest_y, largest_y, perimeters):
             return area
 
     return None
 
-@functools.cache
-def can_create_rectangle(tile1: Point, tile2: Point, perimeters: tuple[Perimeter, ...]) -> bool:
-    smallest_x = tile1.x
-    largest_x = tile2.x
-    smallest_y = tile1.y
-    largest_y = tile2.y
+def can_create_rectangle(smallest_x: int, largest_x: int, smallest_y: int, largest_y: int, perimeters: list[Perimeter]) -> bool:
+    top_perimeters: list[Perimeter] = []
+    bottom_perimeters: list[Perimeter] = []
+    left_perimeters: list[Perimeter] = []
+    right_perimeters: list[Perimeter] = []
+    for perimeter in perimeters:
+        tile1 = perimeter.tile1
+        tile2 = perimeter.tile2
 
-    if smallest_x > largest_x:
-        smallest_x, largest_x = largest_x, smallest_x
-    if smallest_y > largest_y:
-        smallest_y, largest_y = largest_y, smallest_y
+        if (smallest_x <= tile2.x and tile1.x <= largest_x) and (tile1.y <= smallest_y):
+            top_perimeters.append(perimeter)
+        if (smallest_x <= tile2.x and tile1.x <= largest_x) and (largest_y <= tile2.y):
+            bottom_perimeters.append(perimeter)
+        if (tile1.x <= smallest_x) and (smallest_y <= tile2.y and tile1.y <= largest_y):
+            left_perimeters.append(perimeter)
+        if (largest_x <= tile2.x) and (smallest_y <= tile2.y and tile1.y <= largest_y):
+            right_perimeters.append(perimeter)
 
-    print(f"{tile1=}, {tile2=}")
-
-    corners_good = (
-        can_create_for_x_y(smallest_x, smallest_y, perimeters) and
-        can_create_for_x_y(largest_x, largest_y, perimeters) and
-        can_create_for_x_y(smallest_x, largest_y, perimeters) and
-        can_create_for_x_y(largest_x, smallest_y, perimeters)
-    )
-
-    if not corners_good:
+    print("******")
+    if not has_top_bottom(smallest_x, largest_x, top_perimeters):
+        return False
+    if not has_top_bottom(smallest_x, largest_x, bottom_perimeters):
         return False
 
-    for y in range(smallest_y + 1, largest_y + 1):
-        for x in range(smallest_x + 1, largest_x + 1):
-            print(f"{x=}, {y=}. {largest_x=} {largest_y=}")
-            if not can_create_for_x_y(x, y, perimeters):
-                return False
-
-    test_param(smallest_x, largest_y, smallest_y, largest_y, perimeters)
+    if not has_left_right(smallest_y, largest_y, left_perimeters):
+        return False
+    if not has_left_right(smallest_y, largest_y, right_perimeters):
+        return False
 
     return True
 
+def has_top_bottom(smallest_x: int, largest_x: int, perimeters: list[Perimeter]) -> bool:
+    if not perimeters:
+        return False
 
-def test_param(smallest_x: int, largest_x: int, smallest_y: int, largest_y: int, perimeters: tuple[Perimeter, ...]) -> bool:
-    top_perimeters: list[Perimeter] = []
-    for perimeter in perimeters:
-        left_x = perimeter.tile1.x
-        right_x = perimeter.tile2.x
-        top_y = perimeter.tile1.y
-        bottom_y = perimeter.tile2.y
+    sorted_perimeters = sorted(perimeters, key=lambda p: p.tile1.x)
+    perimeter_x_start = sorted_perimeters[0].tile1.x
+    perimeter_x_end = perimeter_x_start
 
-        if left_x > right_x:
-            left_x, right_x = right_x, left_x
-        if top_y > bottom_y:
-            top_y, bottom_y = bottom_y, top_y
+    for perimeter in sorted_perimeters:
+        if (perimeter_x_end >= perimeter.tile1.x):
+            perimeter_x_end = max(perimeter_x_end, perimeter.tile2.x)
 
-        if (smallest_x <= right_x or left_x <= largest_x) and (top_y <= smallest_y):
-            top_perimeters.append(perimeter)
+        if (perimeter_x_end >= largest_x):
+            break
 
-    for perimeter in top_perimeters:
-        print(perimeter)
-    return False
+    print(f"top/bottom: {perimeter_x_start=} <= {smallest_x=} and {largest_x=} <= {perimeter_x_end=}")
+
+    return perimeter_x_start <= smallest_x and largest_x <= perimeter_x_end
 
 
+def has_left_right(smallest_y: int, largest_y: int, perimeters: list[Perimeter]) -> bool:
+    if not perimeters:
+        return False
 
+    sorted_perimeters = sorted(perimeters, key=lambda p: p.tile1.y)
+    perimeter_y_start = sorted_perimeters[0].tile1.y
+    perimeter_y_end = perimeter_y_start
 
+    for perimeter in sorted_perimeters:
+        if (perimeter_y_end >= perimeter.tile1.y):
+            perimeter_y_end = max(perimeter_y_end, perimeter.tile2.y)
 
+        if (perimeter_y_end >= largest_y):
+            break
 
-@functools.cache
-def can_create_for_x_y(x: int, y: int, perimeters: tuple[Perimeter, ...]) -> bool:
-    top_perimeter: Perimeter | None = None
-    bottom_perimeter: Perimeter | None = None
-    left_perimeter: Perimeter | None = None
-    right_perimeter: Perimeter | None = None
+    print(f"left/right: {perimeter_y_start=} <= {smallest_y=} and {largest_y=} <= {perimeter_y_end=}")
 
-    for perimeter in perimeters:
-        # TODO don't need to calculate this all the time
-        left_x = perimeter.tile1.x
-        right_x = perimeter.tile2.x
-        top_y = perimeter.tile1.y
-        bottom_y = perimeter.tile2.y
+    return perimeter_y_start <= smallest_y and largest_y <= perimeter_y_end
 
-        if left_x > right_x:
-            left_x, right_x = right_x, left_x
-        if top_y > bottom_y:
-            top_y, bottom_y = bottom_y, top_y
-
-        if left_x <= x and x <= right_x and y >= top_y:
-            top_perimeter = perimeter
-        if left_x <= x and x <= right_x and y <= bottom_y:
-            bottom_perimeter = perimeter
-        if left_x <= x and top_y <= y and y <= bottom_y:
-            left_perimeter = perimeter
-        if x <= right_x and top_y <= y and y <= bottom_y:
-            right_perimeter = perimeter
-
-    return bool(top_perimeter and bottom_perimeter and left_perimeter and right_perimeter)
 
 
 def create_rectangle_area(tile1: Point, tile2: Point) -> RectangleArea:
@@ -197,23 +176,5 @@ def create_rectangle_area(tile1: Point, tile2: Point) -> RectangleArea:
 
     return RectangleArea(tile1, tile2, area)
 
-def print_grid(grid: Grid, red_tiles: list[Point]):
-    largest_x = 0
-    largest_y = 0
-    for red_tile in red_tiles:
-        if red_tile.x > largest_x:
-            largest_x = red_tile.x
-        if red_tile.y > largest_y:
-            largest_y = red_tile.y
-
-    output = ""
-    for y in range(0, largest_y + 1):
-        for x in range(0, largest_x + 1):
-            output += grid.get(y, {}).get(x, PointValue.NOTHING)
-        output += "\n"
-
-    print(output)
-
 curr_file = sys.argv[1] if len(sys.argv) > 1 else "sample.txt"
-is_print_grid = True if len(sys.argv) > 2 and sys.argv[2] == "--print" else False
-print(f"{day(curr_file, is_print_grid)}")
+print(f"{day(curr_file)}")
